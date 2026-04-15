@@ -35,18 +35,39 @@ This project is local-only for MVP:
 2. Let Gradle sync and download dependencies.
 3. Run the `app` configuration on an emulator or Android device.
 
-## Note about Gradle wrapper
+## Google Maps API key setup
 
-This environment did not have a `gradle` command available, so wrapper files (`gradlew`, `gradlew.bat`, `gradle/wrapper`) were not generated here.
+This project uses secure manifest placeholder injection for the Maps key.
 
-If you want command-line builds from this repo, generate the wrapper once on your machine:
+- `AndroidManifest.xml` uses `android:value="${MAPS_API_KEY}"`
+- `app/build.gradle.kts` reads `MAPS_API_KEY` from either:
+  - Gradle property: `MAPS_API_KEY=...`
+  - Environment variable: `MAPS_API_KEY`
 
-```powershell
-gradle wrapper
+Recommended local setup (not committed):
+
+1. Add to `~/.gradle/gradle.properties`:
+
+```properties
+MAPS_API_KEY=YOUR_DEBUG_OR_LOCAL_KEY
 ```
 
-Then run:
+Alternative local setup in shell:
 
 ```powershell
-.\gradlew.bat test
+$env:MAPS_API_KEY="YOUR_DEBUG_OR_LOCAL_KEY"
+```
+
+Recommended CI/release setup:
+
+1. Store release key in CI secret variable `MAPS_API_KEY`.
+2. Inject it only at build time for release workflows.
+3. Do not hardcode the key in source files.
+
+## Build from terminal
+
+Gradle wrapper files are already present in this repository. Run:
+
+```powershell
+.\gradlew.bat clean testDebugUnitTest assembleDebug
 ```
