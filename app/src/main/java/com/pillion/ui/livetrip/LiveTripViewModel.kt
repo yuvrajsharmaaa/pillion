@@ -10,11 +10,14 @@ import com.pillion.domain.model.Trip
 import com.pillion.domain.model.TripStage
 import com.pillion.domain.model.TripState
 import com.pillion.domain.statemachine.TripStateMachine
+import com.pillion.location.LocationSample
 import kotlinx.coroutines.Job
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.update
+import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
 
 data class LiveTripUiState(
@@ -22,6 +25,8 @@ data class LiveTripUiState(
     val trip: Trip? = null,
     val stages: List<TripStage> = emptyList(),
     val placeSuggestions: List<PlaceSuggestion> = emptyList(),
+    val hasLocationPermission: Boolean = false,
+    val latestLocation: LocationSample? = null,
     val tripState: TripState = TripState(),
     val isTripRunning: Boolean = false,
     val errorMessage: String? = null,
@@ -40,6 +45,8 @@ class LiveTripViewModel(
     private var loadedTrip: Trip? = null
     private var latestStages: List<TripStage> = emptyList()
     private var placeSuggestionJob: Job? = null
+    private var locationJob: Job? = null
+    private var timeTickerJob: Job? = null
 
     init {
         if (tripId <= 0L) {
@@ -49,12 +56,11 @@ class LiveTripViewModel(
                     errorMessage = "Invalid trip id",
                 )
             }
-            return
+        } else {
+            observeTrip()
+            observeStages()
+            observeStateMachine()
         }
-
-        observeTrip()
-        observeStages()
-        observeStateMachine()
     }
 
     private fun observeTrip() {
@@ -83,7 +89,17 @@ class LiveTripViewModel(
     private fun observeStateMachine() {
         viewModelScope.launch {
             stateMachine.state.collect { tripState ->
-                _uiState.update { it.copy(tripState = tripState) }
+                _uiState.update { state ->
+                    state.copy(
+                        tripState = tripState,
+                        isTripRunning = if (tripState.isTripCompleted) false else state.isTripRunning,
+                    )
+                }
+
+                if (tripState.isTripCompleted) {
+                    stopRealtimeJobs()
+                }
+
                 observePlaceSuggestionsForStage(tripState.activeStage?.id)
             }
         }
@@ -110,6 +126,20 @@ class LiveTripViewModel(
 
         stateMachine.startTrip(trip, latestStages)
         _uiState.update { it.copy(isTripRunning = true) }
+
+        startTimeTickerIfNeeded()
+        startLocationTrackingIfAllowed()
+    }
+
+    fun setLocationPermission(granted: Boolean) {
+        _uiState.update { it.copy(hasLocationPermission = granted) }
+
+        if (granted) {
+            startLocationTrackingIfAllowed()
+        } else {
+            locationJob?.cancel()
+            locationJob = null
+        }
     }
 
     fun nextStage() {
@@ -165,6 +195,50 @@ class LiveTripViewModel(
         viewModelScope.launch {
             appContainer.deletePlaceSuggestionUseCase(placeSuggestionId)
         }
+    }
+
+    private fun startLocationTrackingIfAllowed() {
+        val state = _uiState.value
+        if (!state.isTripRunning || !state.hasLocationPermission || state.tripState.isTripCompleted) return
+        if (locationJob?.isActive == true) return
+
+        locationJob = viewModelScope.launch {
+            try {
+                appContainer.locationUpdatesManager.locationFlow().collect { sample ->
+                    _uiState.update { it.copy(latestLocation = sample) }
+                    stateMachine.onLocationUpdate(sample.lat, sample.lng, sample.speedMps)
+                }
+            } catch (_: SecurityException) {
+                _uiState.update {
+                    it.copy(errorMessage = "Location permission is required for live arrival triggers")
+                }
+            }
+        }
+    }
+
+    private fun startTimeTickerIfNeeded() {
+        if (timeTickerJob?.isActive == true) return
+
+        timeTickerJob = viewModelScope.launch {
+            while (isActive && _uiState.value.isTripRunning && !_uiState.value.tripState.isTripCompleted) {
+                delay(60_000L)
+                stateMachine.onTimeTick(System.currentTimeMillis())
+            }
+        }
+    }
+
+    private fun stopRealtimeJobs() {
+        locationJob?.cancel()
+        locationJob = null
+
+        timeTickerJob?.cancel()
+        timeTickerJob = null
+    }
+
+    override fun onCleared() {
+        stopRealtimeJobs()
+        placeSuggestionJob?.cancel()
+        super.onCleared()
     }
 
     class Factory(

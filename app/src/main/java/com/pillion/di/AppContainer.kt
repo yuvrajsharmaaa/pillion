@@ -12,6 +12,8 @@ import com.pillion.domain.repository.PlaceSuggestionRepository
 import com.pillion.domain.repository.TripRepository
 import com.pillion.domain.repository.TripStageRepository
 import com.pillion.domain.statemachine.TripStateMachine
+import com.pillion.location.LocationUpdatesManager
+import com.google.android.gms.location.LocationServices
 import com.pillion.domain.usecase.CreateTripUseCase
 import com.pillion.domain.usecase.DeletePlaceSuggestionUseCase
 import com.pillion.domain.usecase.DeleteTripStageUseCase
@@ -26,6 +28,8 @@ import com.pillion.domain.usecase.UpsertPlaceSuggestionUseCase
 import com.pillion.domain.usecase.UpsertTripStageUseCase
 
 class AppContainer(context: Context) {
+    private val fusedLocationProviderClient = LocationServices.getFusedLocationProviderClient(context)
+
     private val database: AppDatabase =
         Room.databaseBuilder(
             context,
@@ -56,6 +60,7 @@ class AppContainer(context: Context) {
     val deletePlaceSuggestionUseCase = DeletePlaceSuggestionUseCase(placeSuggestionRepository)
 
     val tripEventLogger: TripEventLogger = NoOpTripEventLogger
+    val locationUpdatesManager = LocationUpdatesManager(fusedLocationProviderClient)
 
     fun createTripStateMachine(): TripStateMachine =
         TripStateMachine(eventLogger = tripEventLogger)

@@ -1,5 +1,7 @@
 package com.pillion.ui.livetrip
 
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
@@ -10,6 +12,7 @@ import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.material3.Button
 import androidx.compose.material3.Card
+import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Scaffold
@@ -17,6 +20,7 @@ import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBar
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -27,6 +31,7 @@ import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.pillion.domain.model.PlaceSuggestion
 import com.pillion.domain.model.TripStage
+import com.pillion.location.LocationPermissionHelper
 import com.pillion.navigation.MapsIntentHelper
 
 @Composable
@@ -34,7 +39,19 @@ fun LiveTripRoute(
     viewModel: LiveTripViewModel,
     onBack: () -> Unit,
 ) {
+    val context = LocalContext.current
     val uiState by viewModel.uiState.collectAsStateWithLifecycle()
+
+    val permissionLauncher = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.RequestMultiplePermissions(),
+    ) { grantResults ->
+        val granted = grantResults.values.all { it }
+        viewModel.setLocationPermission(granted)
+    }
+
+    LaunchedEffect(Unit) {
+        viewModel.setLocationPermission(LocationPermissionHelper.hasLocationPermission(context))
+    }
 
     LiveTripScreen(
         uiState = uiState,
@@ -45,10 +62,14 @@ fun LiveTripRoute(
         onSimulateArrival = viewModel::simulateArrival,
         onSavePlaceSuggestion = viewModel::savePlaceSuggestion,
         onDeletePlaceSuggestion = viewModel::deletePlaceSuggestion,
+        onRequestLocationPermission = {
+            permissionLauncher.launch(LocationPermissionHelper.locationPermissions)
+        },
     )
 }
 
 @Composable
+@OptIn(ExperimentalMaterial3Api::class)
 private fun LiveTripScreen(
     uiState: LiveTripUiState,
     onBack: () -> Unit,
@@ -58,6 +79,7 @@ private fun LiveTripScreen(
     onSimulateArrival: () -> Unit,
     onSavePlaceSuggestion: (String, Double, Double, String?, String?) -> Unit,
     onDeletePlaceSuggestion: (Long) -> Unit,
+    onRequestLocationPermission: () -> Unit,
 ) {
     val context = LocalContext.current
     var suggestionName by remember { mutableStateOf("") }
@@ -89,6 +111,23 @@ private fun LiveTripScreen(
         ) {
             uiState.errorMessage?.let { message ->
                 Text(text = message, color = MaterialTheme.colorScheme.error)
+            }
+
+            if (!uiState.hasLocationPermission) {
+                Text(
+                    text = "Location permission is needed for automatic ON_ARRIVAL stage transitions.",
+                    style = MaterialTheme.typography.bodyMedium,
+                )
+                Button(onClick = onRequestLocationPermission) {
+                    Text(text = "Grant Location Permission")
+                }
+            }
+
+            uiState.latestLocation?.let { sample ->
+                Text(
+                    text = "Live location: ${sample.lat}, ${sample.lng} @ ${sample.speedMps} m/s",
+                    style = MaterialTheme.typography.bodySmall,
+                )
             }
 
             Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
