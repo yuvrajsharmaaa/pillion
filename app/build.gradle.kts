@@ -6,6 +6,9 @@ plugins {
 
 val mapsApiKeyProvider = providers.gradleProperty("MAPS_API_KEY")
     .orElse(System.getenv("MAPS_API_KEY") ?: "")
+val enableReleaseOptimization = providers.gradleProperty("ENABLE_RELEASE_OPTIMIZATION")
+    .orElse("false")
+    .map { it.equals("true", ignoreCase = true) }
 
 android {
     namespace = "com.pillion"
@@ -28,7 +31,8 @@ android {
 
     buildTypes {
         release {
-            isMinifyEnabled = false
+            isMinifyEnabled = enableReleaseOptimization.get()
+            isShrinkResources = enableReleaseOptimization.get()
             proguardFiles(
                 getDefaultProguardFile("proguard-android-optimize.txt"),
                 "proguard-rules.pro"

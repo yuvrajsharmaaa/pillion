@@ -1,5 +1,7 @@
 package com.pillion.ui.livetrip
 
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.layout.Arrangement
@@ -48,6 +50,7 @@ import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.graphicsLayer
@@ -68,6 +71,7 @@ import com.google.maps.android.compose.rememberCameraPositionState
 import com.pillion.domain.model.PlaceSuggestion
 import com.pillion.domain.model.StageStatus
 import com.pillion.domain.model.TripStage
+import com.pillion.location.LocationPermissionHelper
 import com.pillion.navigation.MapsIntentHelper
 import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.spring
@@ -80,7 +84,18 @@ fun LiveTripRoute(
     viewModel: LiveTripViewModel,
     onBack: () -> Unit,
 ) {
+    val context = LocalContext.current
     val uiState by viewModel.uiState.collectAsState()
+    val permissionLauncher = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.RequestMultiplePermissions(),
+    ) { grantResults ->
+        val granted = grantResults.values.all { it }
+        viewModel.setLocationPermission(granted)
+    }
+
+    LaunchedEffect(Unit) {
+        viewModel.setLocationPermission(LocationPermissionHelper.hasLocationPermission(context))
+    }
 
     LiveTripScreen(
         uiState = uiState,
@@ -101,6 +116,9 @@ fun LiveTripRoute(
         onConsumeNavigationEvent = viewModel::consumePendingNavigationRequest,
         onConsumeArrivalSheetEvent = viewModel::consumeArrivalSheetForStage,
         onDismissWeakConnectionBanner = viewModel::dismissWeakConnectionBanner,
+        onRequestLocationPermission = {
+            permissionLauncher.launch(LocationPermissionHelper.locationPermissions)
+        },
     )
 }
 
@@ -125,6 +143,7 @@ fun LiveTripScreen(
     onConsumeNavigationEvent: (Long) -> Unit,
     onConsumeArrivalSheetEvent: (Long) -> Unit,
     onDismissWeakConnectionBanner: () -> Unit,
+    onRequestLocationPermission: () -> Unit,
 ) {
     val context = androidx.compose.ui.platform.LocalContext.current
     val snackbars = remember { SnackbarHostState() }
@@ -236,14 +255,16 @@ fun LiveTripScreen(
                 if (!uiState.hasLocationPermission) {
                     StatusBanner(
                         text = uiState.locationPermissionRationale,
-                        onDismiss = { },
+                        actionLabel = "Grant",
+                        onAction = onRequestLocationPermission,
                     )
                 }
 
                 if (uiState.weakConnectionBannerVisible) {
                     StatusBanner(
                         text = "Weak connection detected. Location updates may be delayed.",
-                        onDismiss = onDismissWeakConnectionBanner,
+                        actionLabel = "Dismiss",
+                        onAction = onDismissWeakConnectionBanner,
                     )
                 }
 
@@ -359,7 +380,8 @@ private fun MapCanvas(
 @Composable
 private fun StatusBanner(
     text: String,
-    onDismiss: () -> Unit,
+    actionLabel: String,
+    onAction: () -> Unit,
 ) {
     Surface(
         tonalElevation = 2.dp,
@@ -383,7 +405,7 @@ private fun StatusBanner(
                 text = text,
                 style = MaterialTheme.typography.bodyMedium,
             )
-            AssistChip(onClick = onDismiss, label = { Text("Dismiss") })
+            AssistChip(onClick = onAction, label = { Text(actionLabel) })
         }
     }
 }

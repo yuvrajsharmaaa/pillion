@@ -71,3 +71,26 @@ Gradle wrapper files are already present in this repository. Run:
 ```powershell
 .\gradlew.bat clean testDebugUnitTest assembleDebug
 ```
+
+## Release readiness checklist
+
+Before generating a release artifact:
+
+1. Set a valid production `MAPS_API_KEY` through CI secret or secure local env.
+2. Ensure location permissions are requested and granted on at least one physical-device test run.
+3. Verify Live Trip map/search/navigation handoff works both:
+  - with Google Maps installed
+  - with Google Maps unavailable (fallback intent path)
+4. Run release build validation:
+
+```powershell
+.\gradlew.bat clean testDebugUnitTest assembleRelease
+```
+
+To test optimized release shrinking/minification (recommended in CI):
+
+```powershell
+.\gradlew.bat clean testDebugUnitTest assembleRelease -PENABLE_RELEASE_OPTIMIZATION=true
+```
+
+5. Confirm `app/build/outputs/apk/release/` contains the signed/unsigned release artifact based on your signing setup.
